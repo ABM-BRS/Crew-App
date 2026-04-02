@@ -70,7 +70,7 @@
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getDatabase, ref, push, update, remove, onValue } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+import { getDatabase, ref, push, update, remove, onValue, get } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 // --- Firebase Config ---
@@ -86,6 +86,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 const pickupsRef = ref(db, "pickups1");
+const auditRef = ref(db, "auditLogs");
 const dashboard = document.getElementById("dashboard");
 const alertSound = document.getElementById("alertSound");
 
@@ -104,6 +105,21 @@ window.toggleStand = function() {
 };
 toggleStand();
 
+// --- Audit log helper ---
+async function logAudit(jobId, action, jobData) {
+    const auditEntry = {
+        jobId: jobId,
+        action: action,          
+        crew: jobData.crew || "",
+        stand: jobData.stand || "",
+        type: jobData.type || "",
+        flightNumber: jobData.flightNumber || "",
+        timestamp: new Date().toISOString()
+    };
+    await push(auditRef, auditEntry);
+}
+
+// --- Google Sheets ---
 async function sendToSheets(jobId, newJob) {
     try {
         await fetch(SHEETS_URL, {
@@ -148,6 +164,7 @@ window.confirmPickup = async function() {
 
     try {
         const jobRef = await push(pickupsRef, newJob);
+        await logAudit(jobRef.key, "Created", newJob);       // <-- audit log
         await sendToSheets(jobRef.key, newJob);
     } catch (err) {
         console.error("Failed to add pickup:", err);
@@ -165,15 +182,22 @@ window.confirmPickup = async function() {
 window.collected = async id => {
     const updateData = { status: "Collected", collectedTime: new Date().toISOString() };
     await update(ref(db, "pickups1/" + id), updateData);
+    await logAudit(id, "Collected", updateData);  // <-- audit log
     await sendToSheets(id, updateData);
 };
+
 window.complete = async id => {
     const updateData = { status: "Completed", completedTime: new Date().toISOString() };
     await update(ref(db, "pickups1/" + id), updateData);
+    await logAudit(id, "Completed", updateData);  // <-- audit log
     await sendToSheets(id, updateData);
 };
+
 window.removePickup = async id => {
+    const jobSnapshot = await get(ref(db, "pickups1/" + id));
+    const jobData = jobSnapshot.val() || {};
     await remove(ref(db, "pickups1/" + id));
+    await logAudit(id, "Deleted", jobData);      // <-- audit log
     await sendToSheets(id, { status: "Deleted" });
 };
 
@@ -195,7 +219,6 @@ onValue(pickupsRef, snapshot => {
         const data = { id: child.key, ...child.val() };
         const createdTime = new Date(data.createdTime);
         if (!data.createdTime || isNaN(createdTime)) {
-            console.warn(`Job ${child.key} has invalid createdTime, keeping it`);
             pickups.push(data);
             return;
         }
