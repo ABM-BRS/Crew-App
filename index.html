@@ -32,12 +32,14 @@
         @keyframes blink { 0% { background-color: #ffe6e6; } 50% { background-color: #ffcccc; } 100% { background-color: #ffe6e6; } }
         .late.blink { animation: blink 1s infinite; }
         #installButton { display:none; margin-bottom:15px; background:#4caf50; }
+        #sheetsFrame { display:none; }
     </style>
 </head>
 
 <body>
 <h1>Airport Pickup Dispatch</h1>
 <button id="installButton">Install App</button>
+<iframe id="sheetsFrame" name="sheetsFrame"></iframe>
 
 <div class="card">
     <h2>Confirm Pickup</h2>
@@ -74,7 +76,6 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { getDatabase, ref, push, update, onValue, get } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
-// --- Firebase Config ---
 const firebaseConfig = {
     apiKey: "AIzaSyCCehxMag_g2wXh7WzruvZyt9kdSJI4OpI",
     authDomain: "crew-app-e1315.firebaseapp.com",
@@ -92,16 +93,13 @@ const auditRef = ref(db, "auditLogs");
 const dashboard = document.getElementById("dashboard");
 const alertSound = document.getElementById("alertSound");
 
-// --- Anonymous Auth ---
 const auth = getAuth();
 signInAnonymously(auth)
     .then(() => console.log("Signed in anonymously"))
     .catch(err => console.error("Anonymous auth failed:", err));
 
-// --- Google Sheets Web App URL ---
 const SHEETS_URL = "https://script.google.com/macros/s/AKfycbzlPzzO3_JIBZUk8hGcJpFG0m4jG5RZ_dtBR-gEy_E-jGCz4tJPmjY9xpuO0MQJXYTL/exec";
 
-// --- Helpers ---
 window.toggleStand = function() {
     document.getElementById("stand").style.display =
         document.getElementById("type").value === "Inbound" ? "block" : "none";
@@ -114,7 +112,6 @@ function formatMinutesDiff(start, end) {
     return Number.isFinite(diff) ? diff.toFixed(1) : "";
 }
 
-// --- Audit log helper ---
 async function logAudit(jobId, action, jobData) {
     const t = jobData.timestamps || {};
     const auditEntry = {
@@ -138,11 +135,9 @@ async function logAudit(jobId, action, jobData) {
     await push(auditRef, auditEntry);
 }
 
-// --- Google Sheets ---
-async function sendToSheets(jobId, job) {
+function sendToSheets(jobId, job) {
     try {
         const t = job.timestamps || {};
-
         const payload = {
             jobId,
             flightNumber: job.flightNumber || "",
@@ -163,22 +158,29 @@ async function sendToSheets(jobId, job) {
 
         console.log("Sending to Sheets:", payload);
 
-        await fetch(SHEETS_URL, {
-            method: "POST",
-            headers: {
-                "Content-Type": "text/plain;charset=utf-8"
-            },
-            body: JSON.stringify(payload)
-        });
+        const form = document.createElement("form");
+        form.method = "POST";
+        form.action = SHEETS_URL;
+        form.target = "sheetsFrame";
+        form.style.display = "none";
 
-        console.log("Sheets request sent");
+        const input = document.createElement("input");
+        input.type = "hidden";
+        input.name = "payload";
+        input.value = JSON.stringify(payload);
+
+        form.appendChild(input);
+        document.body.appendChild(form);
+        form.submit();
+        document.body.removeChild(form);
+
+        console.log("Sheets form submitted");
     } catch (e) {
         console.warn("Failed to send to Google Sheets:", e);
         alert("Google Sheets sync failed. Open F12 > Console to see the error.");
     }
 }
 
-// --- Confirm Pickup ---
 window.confirmPickup = async function() {
     const flight = document.getElementById("flight").value.trim();
     const type = document.getElementById("type").value;
@@ -223,7 +225,7 @@ window.confirmPickup = async function() {
     try {
         const jobRef = await push(pickupsRef, newJob);
         await logAudit(jobRef.key, "Created", newJob);
-        await sendToSheets(jobRef.key, newJob);
+        sendToSheets(jobRef.key, newJob);
     } catch (err) {
         console.error("Failed to add pickup:", err);
         alert("Error adding pickup, see console");
@@ -235,7 +237,6 @@ window.confirmPickup = async function() {
     document.getElementById("crew").value = "";
 };
 
-// --- Collected / Complete / Delete ---
 window.collected = async id => {
     const now = new Date().toISOString();
 
@@ -248,7 +249,7 @@ window.collected = async id => {
     const fullJob = snap.val();
 
     await logAudit(id, "Collected", fullJob);
-    await sendToSheets(id, fullJob);
+    sendToSheets(id, fullJob);
 };
 
 window.complete = async id => {
@@ -263,7 +264,7 @@ window.complete = async id => {
     const fullJob = snap.val();
 
     await logAudit(id, "Completed", fullJob);
-    await sendToSheets(id, fullJob);
+    sendToSheets(id, fullJob);
 };
 
 window.removePickup = async id => {
@@ -278,10 +279,9 @@ window.removePickup = async id => {
     const fullJob = snap.val();
 
     await logAudit(id, "Deleted", fullJob);
-    await sendToSheets(id, fullJob);
+    sendToSheets(id, fullJob);
 };
 
-// --- Reset Alerts ---
 window.resetAlerts = function() {
     alertSound.pause();
     alertSound.currentTime = 0;
@@ -291,7 +291,6 @@ window.resetAlerts = function() {
     });
 };
 
-// --- Live pickups ---
 onValue(pickupsRef, snapshot => {
     const pickups = [];
     const now = new Date();
@@ -354,7 +353,6 @@ onValue(pickupsRef, snapshot => {
     updateCountdowns();
 });
 
-// --- Countdown ---
 function updateCountdowns() {
     const cards = Array.from(document.getElementsByClassName("pickup-card"));
     const now = new Date();
@@ -401,7 +399,6 @@ function updateCountdowns() {
 }
 setInterval(updateCountdowns, 1000);
 
-// --- PWA install ---
 let deferredPrompt;
 const installButton = document.getElementById("installButton");
 
@@ -418,7 +415,6 @@ installButton.addEventListener("click", async () => {
     deferredPrompt = null;
 });
 
-// --- Service Worker ---
 if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("service-worker.js")
         .then(() => console.log("Service Worker registered"));
