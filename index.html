@@ -163,19 +163,15 @@ async function sendToSheets(jobId, job) {
 
         console.log("Sending to Sheets:", payload);
 
-        const response = await fetch(SHEETS_URL, {
+        await fetch(SHEETS_URL, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+                "Content-Type": "text/plain;charset=utf-8"
+            },
             body: JSON.stringify(payload)
         });
 
-        const text = await response.text();
-        console.log("Sheets response status:", response.status);
-        console.log("Sheets response body:", text);
-
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${text}`);
-        }
+        console.log("Sheets request sent");
     } catch (e) {
         console.warn("Failed to send to Google Sheets:", e);
         alert("Google Sheets sync failed. Open F12 > Console to see the error.");
