@@ -32,7 +32,7 @@
         @keyframes blink { 0% { background-color: #ffe6e6; } 50% { background-color: #ffcccc; } 100% { background-color: #ffe6e6; } }
         .late.blink { animation: blink 1s infinite; }
         #installButton { display:none; margin-bottom:15px; background:#4caf50; }
-        #sheetsFrame { display:none; }
+        #sheetsFrame { display:none; width:0; height:0; border:0; }
     </style>
 </head>
 
@@ -76,6 +76,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { getDatabase, ref, push, update, onValue, get } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
+// --- Firebase Config ---
 const firebaseConfig = {
     apiKey: "AIzaSyCCehxMag_g2wXh7WzruvZyt9kdSJI4OpI",
     authDomain: "crew-app-e1315.firebaseapp.com",
@@ -93,13 +94,16 @@ const auditRef = ref(db, "auditLogs");
 const dashboard = document.getElementById("dashboard");
 const alertSound = document.getElementById("alertSound");
 
+// --- Anonymous Auth ---
 const auth = getAuth();
 signInAnonymously(auth)
     .then(() => console.log("Signed in anonymously"))
     .catch(err => console.error("Anonymous auth failed:", err));
 
-const SHEETS_URL = "https://script.google.com/macros/s/AKfycbzQgWRVINgwW9QxNsurjjo-ZedVUyqvAC4GXVmROZjIduhX0-LFsq5i2uW-_lCt21Njiw/exec";
+// --- Google Sheets Web App URL ---
+const SHEETS_URL = "https://script.google.com/macros/s/AKfycbzlPzzO3_JIBZUk8hGcJpFG0m4jG5RZ_dtBR-gEy_E-jGCz4tJPmjY9xpuO0MQJXYTL/exec";
 
+// --- Helpers ---
 window.toggleStand = function() {
     document.getElementById("stand").style.display =
         document.getElementById("type").value === "Inbound" ? "block" : "none";
@@ -112,6 +116,7 @@ function formatMinutesDiff(start, end) {
     return Number.isFinite(diff) ? diff.toFixed(1) : "";
 }
 
+// --- Audit log helper ---
 async function logAudit(jobId, action, jobData) {
     const t = jobData.timestamps || {};
     const auditEntry = {
@@ -135,6 +140,7 @@ async function logAudit(jobId, action, jobData) {
     await push(auditRef, auditEntry);
 }
 
+// --- Google Sheets via hidden form (avoids CORS) ---
 function sendToSheets(jobId, job) {
     try {
         const t = job.timestamps || {};
@@ -181,6 +187,7 @@ function sendToSheets(jobId, job) {
     }
 }
 
+// --- Confirm Pickup ---
 window.confirmPickup = async function() {
     const flight = document.getElementById("flight").value.trim();
     const type = document.getElementById("type").value;
@@ -237,6 +244,7 @@ window.confirmPickup = async function() {
     document.getElementById("crew").value = "";
 };
 
+// --- Collected / Complete / Delete ---
 window.collected = async id => {
     const now = new Date().toISOString();
 
@@ -247,6 +255,8 @@ window.collected = async id => {
 
     const snap = await get(ref(db, "pickups1/" + id));
     const fullJob = snap.val();
+
+    console.log("Collected fullJob:", fullJob);
 
     await logAudit(id, "Collected", fullJob);
     sendToSheets(id, fullJob);
@@ -263,6 +273,8 @@ window.complete = async id => {
     const snap = await get(ref(db, "pickups1/" + id));
     const fullJob = snap.val();
 
+    console.log("Completed fullJob:", fullJob);
+
     await logAudit(id, "Completed", fullJob);
     sendToSheets(id, fullJob);
 };
@@ -278,10 +290,13 @@ window.removePickup = async id => {
     const snap = await get(ref(db, "pickups1/" + id));
     const fullJob = snap.val();
 
+    console.log("Deleted fullJob:", fullJob);
+
     await logAudit(id, "Deleted", fullJob);
     sendToSheets(id, fullJob);
 };
 
+// --- Reset Alerts ---
 window.resetAlerts = function() {
     alertSound.pause();
     alertSound.currentTime = 0;
@@ -291,6 +306,7 @@ window.resetAlerts = function() {
     });
 };
 
+// --- Live pickups ---
 onValue(pickupsRef, snapshot => {
     const pickups = [];
     const now = new Date();
@@ -353,6 +369,7 @@ onValue(pickupsRef, snapshot => {
     updateCountdowns();
 });
 
+// --- Countdown ---
 function updateCountdowns() {
     const cards = Array.from(document.getElementsByClassName("pickup-card"));
     const now = new Date();
@@ -399,6 +416,7 @@ function updateCountdowns() {
 }
 setInterval(updateCountdowns, 1000);
 
+// --- PWA install ---
 let deferredPrompt;
 const installButton = document.getElementById("installButton");
 
@@ -415,6 +433,7 @@ installButton.addEventListener("click", async () => {
     deferredPrompt = null;
 });
 
+// --- Service Worker ---
 if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("service-worker.js")
         .then(() => console.log("Service Worker registered"));
