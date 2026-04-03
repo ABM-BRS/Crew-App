@@ -99,7 +99,7 @@ signInAnonymously(auth)
     .catch(err => console.error("Anonymous auth failed:", err));
 
 // --- Google Sheets Web App URL ---
-const SHEETS_URL = "const SHEETS_URL = "https://script.google.com/macros/s/AKfycbzlPzzO3_JIBZUk8hGcJpFG0m4jG5RZ_dtBR-gEy_E-jGCz4tJPmjY9xpuO0MQJXYTL/exec";";
+const SHEETS_URL = "https://script.google.com/macros/s/AKfycbzlPzzO3_JIBZUk8hGcJpFG0m4jG5RZ_dtBR-gEy_E-jGCz4tJPmjY9xpuO0MQJXYTL/exec";
 
 // --- Helpers ---
 window.toggleStand = function() {
@@ -118,8 +118,8 @@ function formatMinutesDiff(start, end) {
 async function logAudit(jobId, action, jobData) {
     const t = jobData.timestamps || {};
     const auditEntry = {
-        jobId: jobId,
-        action: action,
+        jobId,
+        action,
         crew: jobData.crew || "",
         stand: jobData.stand || "",
         type: jobData.type || "",
@@ -161,13 +161,24 @@ async function sendToSheets(jobId, job) {
             lastUpdated: new Date().toISOString()
         };
 
-        await fetch(SHEETS_URL, {
+        console.log("Sending to Sheets:", payload);
+
+        const response = await fetch(SHEETS_URL, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload)
         });
+
+        const text = await response.text();
+        console.log("Sheets response status:", response.status);
+        console.log("Sheets response body:", text);
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${text}`);
+        }
     } catch (e) {
         console.warn("Failed to send to Google Sheets:", e);
+        alert("Google Sheets sync failed. Open F12 > Console to see the error.");
     }
 }
 
