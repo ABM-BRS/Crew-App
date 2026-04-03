@@ -19,9 +19,10 @@
         .pickup-card { background:white; padding:15px; border-radius:8px; margin-bottom:15px; box-shadow:0 2px 6px rgba(0,0,0,0.1); position: relative; transition: all 0.3s ease; }
         .pickup-header { font-size: 20px; font-weight: bold; margin-bottom: 8px; }
         .status { font-weight: bold; margin-top: 5px; }
-        .pending { color: #f57c00; }
+        .requested { color: #f57c00; }
         .collected { color: #1976d2; }
         .completed { color: #2e7d32; }
+        .deleted-status { color: #e53935; }
         .actions { display:flex; gap:10px; margin-top:10px; }
         .actions button { flex:1; }
         .countdown { font-weight: bold; margin-top:5px; }
@@ -61,7 +62,7 @@
 </div>
 
 <div class="card">
-    <h2>Active Pickups (Last 4 Hours)</h2>
+    <h2>Active Pickups</h2>
     <button style="background:#ff9800; margin-bottom:10px;" onclick="resetAlerts()">Reset Alerts</button>
     <div id="dashboard"></div>
 </div>
@@ -70,7 +71,7 @@
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getDatabase, ref, push, update, remove, onValue, get } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+import { getDatabase, ref, push, update, onValue, get } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 // --- Firebase Config ---
@@ -83,6 +84,7 @@ const firebaseConfig = {
     appId: "1:320647227664:web:8de65c96c509d819a7dd95",
     databaseURL: "https://crew-app-e1315-default-rtdb.europe-west1.firebasedatabase.app/"
 };
+
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 const pickupsRef = ref(db, "pickups1");
@@ -101,33 +103,72 @@ const SHEETS_URL = "https://script.google.com/macros/s/AKfycbxx1Vwrj2TEcVNXCany1
 
 // --- Helpers ---
 window.toggleStand = function() {
-    document.getElementById("stand").style.display = document.getElementById("type").value === "Inbound" ? "block" : "none";
+    document.getElementById("stand").style.display =
+        document.getElementById("type").value === "Inbound" ? "block" : "none";
 };
 toggleStand();
 
+function formatMinutesDiff(start, end) {
+    if (!start || !end) return "";
+    const diff = (new Date(end) - new Date(start)) / 60000;
+    return Number.isFinite(diff) ? diff.toFixed(1) : "";
+}
+
 // --- Audit log helper ---
 async function logAudit(jobId, action, jobData) {
+    const t = jobData.timestamps || {};
     const auditEntry = {
         jobId: jobId,
-        action: action,          
+        action: action,
         crew: jobData.crew || "",
         stand: jobData.stand || "",
         type: jobData.type || "",
         flightNumber: jobData.flightNumber || "",
+        status: jobData.status || "",
+        pickupTime: jobData.pickupTime || "",
+        created: t.created || "",
+        requested: t.requested || "",
+        collected: t.collected || "",
+        completed: t.completed || "",
+        deleted: t.deleted || "",
+        requestToCollect: formatMinutesDiff(t.requested, t.collected),
+        collectToComplete: formatMinutesDiff(t.collected, t.completed),
         timestamp: new Date().toISOString()
     };
     await push(auditRef, auditEntry);
 }
 
 // --- Google Sheets ---
-async function sendToSheets(jobId, newJob) {
+async function sendToSheets(jobId, job) {
     try {
+        const t = job.timestamps || {};
+
+        const payload = {
+            jobId,
+            flightNumber: job.flightNumber || "",
+            crew: job.crew || "",
+            stand: job.stand || "",
+            type: job.type || "",
+            pickupTime: job.pickupTime || "",
+            status: job.status || "",
+            created: t.created || "",
+            requested: t.requested || "",
+            collected: t.collected || "",
+            completed: t.completed || "",
+            deleted: t.deleted || "",
+            requestToCollect: formatMinutesDiff(t.requested, t.collected),
+            collectToComplete: formatMinutesDiff(t.collected, t.completed),
+            lastUpdated: new Date().toISOString()
+        };
+
         await fetch(SHEETS_URL, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ id: jobId, ...newJob })
+            body: JSON.stringify(payload)
         });
-    } catch(e) { console.warn("Failed to send to Google Sheets:", e); }
+    } catch (e) {
+        console.warn("Failed to send to Google Sheets:", e);
+    }
 }
 
 // --- Confirm Pickup ---
@@ -138,17 +179,23 @@ window.confirmPickup = async function() {
     const timeInput = document.getElementById("time").value;
     const crew = document.getElementById("crew").value;
 
-    if (!flight || !timeInput || !crew) { 
-        alert("Enter flight, time, and crew"); 
-        return; 
+    if (!flight || !timeInput || !crew) {
+        alert("Enter flight, time, and crew");
+        return;
     }
-    if (type === "Inbound" && !stand) { 
-        alert("Enter stand for inbound"); 
-        return; 
+
+    if (type === "Inbound" && !stand) {
+        alert("Enter stand for inbound");
+        return;
     }
 
     const pickupTime = new Date(timeInput);
-    if (isNaN(pickupTime)) { alert("Invalid date/time"); return; }
+    if (isNaN(pickupTime)) {
+        alert("Invalid date/time");
+        return;
+    }
+
+    const now = new Date().toISOString();
 
     const newJob = {
         flightNumber: flight,
@@ -156,112 +203,141 @@ window.confirmPickup = async function() {
         stand: stand,
         pickupTime: pickupTime.toISOString(),
         crew: crew,
-        status: "Pending",
-        createdTime: new Date().toISOString(),
-        completedTime: null,
-        collectedTime: null
+        status: "Requested",
+        timestamps: {
+            created: now,
+            requested: now,
+            collected: null,
+            completed: null,
+            deleted: null
+        }
     };
 
     try {
         const jobRef = await push(pickupsRef, newJob);
-        await logAudit(jobRef.key, "Created", newJob);       // <-- audit log
+        await logAudit(jobRef.key, "Created", newJob);
         await sendToSheets(jobRef.key, newJob);
     } catch (err) {
         console.error("Failed to add pickup:", err);
         alert("Error adding pickup, see console");
     }
 
-    // Clear form
     document.getElementById("flight").value = "";
     document.getElementById("stand").value = "";
     document.getElementById("time").value = "";
     document.getElementById("crew").value = "";
 };
 
-// --- Collected / Complete / Remove ---
+// --- Collected / Complete / Delete ---
 window.collected = async id => {
-    const updateData = { status: "Collected", collectedTime: new Date().toISOString() };
-    await update(ref(db, "pickups1/" + id), updateData);
-    await logAudit(id, "Collected", updateData);  // <-- audit log
-    await sendToSheets(id, updateData);
+    const now = new Date().toISOString();
+
+    await update(ref(db, "pickups1/" + id), {
+        status: "Collected",
+        "timestamps/collected": now
+    });
+
+    const snap = await get(ref(db, "pickups1/" + id));
+    const fullJob = snap.val();
+
+    await logAudit(id, "Collected", fullJob);
+    await sendToSheets(id, fullJob);
 };
 
 window.complete = async id => {
-    const updateData = { status: "Completed", completedTime: new Date().toISOString() };
-    await update(ref(db, "pickups1/" + id), updateData);
-    await logAudit(id, "Completed", updateData);  // <-- audit log
-    await sendToSheets(id, updateData);
+    const now = new Date().toISOString();
+
+    await update(ref(db, "pickups1/" + id), {
+        status: "Completed",
+        "timestamps/completed": now
+    });
+
+    const snap = await get(ref(db, "pickups1/" + id));
+    const fullJob = snap.val();
+
+    await logAudit(id, "Completed", fullJob);
+    await sendToSheets(id, fullJob);
 };
 
 window.removePickup = async id => {
-    const jobSnapshot = await get(ref(db, "pickups1/" + id));
-    const jobData = jobSnapshot.val() || {};
-    await remove(ref(db, "pickups1/" + id));
-    await logAudit(id, "Deleted", jobData);      // <-- audit log
-    await sendToSheets(id, { status: "Deleted" });
+    const now = new Date().toISOString();
+
+    await update(ref(db, "pickups1/" + id), {
+        status: "Deleted",
+        "timestamps/deleted": now
+    });
+
+    const snap = await get(ref(db, "pickups1/" + id));
+    const fullJob = snap.val();
+
+    await logAudit(id, "Deleted", fullJob);
+    await sendToSheets(id, fullJob);
 };
 
 // --- Reset Alerts ---
 window.resetAlerts = function() {
-    alertSound.pause(); alertSound.currentTime=0;
+    alertSound.pause();
+    alertSound.currentTime = 0;
     Array.from(document.getElementsByClassName("pickup-card")).forEach(card => {
-        card.classList.remove("blink"); card.dataset.alerted="false";
+        card.classList.remove("blink");
+        card.dataset.alerted = "false";
     });
 };
 
 // --- Live pickups ---
-const FOUR_HOURS_MS = 4*60*60*1000;
 onValue(pickupsRef, snapshot => {
     const pickups = [];
     const now = new Date();
 
     snapshot.forEach(child => {
         const data = { id: child.key, ...child.val() };
-        const createdTime = new Date(data.createdTime);
-        if (!data.createdTime || isNaN(createdTime)) {
-            pickups.push(data);
-            return;
-        }
-        if (now - createdTime > FOUR_HOURS_MS) {
-            remove(ref(db, "pickups1/" + child.key)).catch(err => console.warn("Failed to remove old job:", err));
-            return;
-        }
         pickups.push(data);
     });
 
-    pickups.sort((a,b) => {
-        const aTime = new Date(a.pickupTime), bTime = new Date(b.pickupTime);
-        const getPriority = (p,time) => {
-            if(p.status !== "Pending") return 4;
-            if(isNaN(time)) return 4;
-            const diff=(time-now)/60000;
-            if(diff<0) return 0;
-            if(diff<=10) return 1;
-            if(diff<=30) return 2;
+    pickups.sort((a, b) => {
+        const aTime = new Date(a.pickupTime);
+        const bTime = new Date(b.pickupTime);
+
+        const getPriority = (p, time) => {
+            if (p.status !== "Requested") return 4;
+            if (isNaN(time)) return 4;
+            const diff = (time - now) / 60000;
+            if (diff < 0) return 0;
+            if (diff <= 10) return 1;
+            if (diff <= 30) return 2;
             return 3;
         };
-        return getPriority(a,aTime)-getPriority(b,bTime) || aTime-bTime;
+
+        return getPriority(a, aTime) - getPriority(b, bTime) || aTime - bTime;
     });
 
     dashboard.innerHTML = "";
+
     pickups.forEach(p => {
-        if(p.status==="Completed") return;
+        if (p.status === "Completed" || p.status === "Deleted") return;
+
         const card = document.createElement("div");
-        card.className="pickup-card";
+        card.className = "pickup-card";
         card.dataset.pickupTime = p.pickupTime;
         card.dataset.status = p.status;
-        card.dataset.alerted="false";
+        card.dataset.alerted = "false";
+
         const pickupDate = new Date(p.pickupTime);
+        const statusClass =
+            p.status === "Collected" ? "collected" :
+            p.status === "Completed" ? "completed" :
+            p.status === "Deleted" ? "deleted-status" : "requested";
+
         card.innerHTML = `
             <div class="pickup-header">${p.flightNumber}</div>
-            <div>${p.type}${p.stand ? " – Stand "+p.stand : ""}</div>
+            <div>${p.type}${p.stand ? " – Stand " + p.stand : ""}</div>
             <div class="pickup-time">Pickup: ${isNaN(pickupDate) ? "Invalid date" : pickupDate.toLocaleString()}</div>
             <div>Crew: ${p.crew}</div>
-            <div class="status ${p.status==="Collected"?"collected":"pending"}">${p.status}</div>
+            <div class="status ${statusClass}">${p.status}</div>
             <div class="countdown"></div>
             <div class="actions">
-                ${p.status==="Pending"?`<button onclick="collected('${p.id}')">Collected</button>`:""}
-                ${p.status==="Collected"?`<button class="complete" onclick="complete('${p.id}')">Complete</button>`:""}
+                ${p.status === "Requested" ? `<button onclick="collected('${p.id}')">Collected</button>` : ""}
+                ${p.status === "Collected" ? `<button class="complete" onclick="complete('${p.id}')">Complete</button>` : ""}
                 <button class="delete" onclick="removePickup('${p.id}')">Delete Job (no show)</button>
             </div>
         `;
@@ -281,48 +357,65 @@ function updateCountdowns() {
         const countdownEl = card.querySelector(".countdown");
         const pickupTime = new Date(card.dataset.pickupTime);
 
-        if(!card.dataset.pickupTime || isNaN(pickupTime)) {
+        if (!card.dataset.pickupTime || isNaN(pickupTime)) {
             countdownEl.textContent = "Invalid pickup time";
-            card.classList.remove("imminent","urgent","late","blink");
-            card.dataset.alerted="false";
+            card.classList.remove("imminent", "urgent", "late", "blink");
+            card.dataset.alerted = "false";
             return;
         }
 
-        if(status!=="Pending") {
+        if (status !== "Requested") {
             countdownEl.textContent = "";
-            card.classList.remove("imminent","urgent","late","blink");
+            card.classList.remove("imminent", "urgent", "late", "blink");
             return;
         }
 
-        const diffSeconds = Math.floor((pickupTime - now)/1000);
-        if(diffSeconds<0){
-            countdownEl.textContent="Late!";
-            card.classList.remove("imminent","urgent");
-            card.classList.add("late","blink");
-            if(card.dataset.alerted==="false"){
-                try{ alertSound.play(); }catch(e){ console.warn("Alert sound failed:", e);}
-                card.dataset.alerted="true";
+        const diffSeconds = Math.floor((pickupTime - now) / 1000);
+
+        if (diffSeconds < 0) {
+            countdownEl.textContent = "Late!";
+            card.classList.remove("imminent", "urgent");
+            card.classList.add("late", "blink");
+
+            if (card.dataset.alerted === "false") {
+                try { alertSound.play(); } catch (e) { console.warn("Alert sound failed:", e); }
+                card.dataset.alerted = "true";
             }
         } else {
-            const minutes=Math.floor(diffSeconds/60), seconds=diffSeconds%60;
-            countdownEl.textContent=`Time left: ${minutes.toString().padStart(2,'0')}:${seconds.toString().padStart(2,'0')} min`;
-            card.classList.remove("imminent","urgent","late","blink");
-            if(minutes<=10) card.classList.add("imminent");
-            else if(minutes<=30) card.classList.add("urgent");
-            card.dataset.alerted="false";
+            const minutes = Math.floor(diffSeconds / 60);
+            const seconds = diffSeconds % 60;
+            countdownEl.textContent = `Time left: ${minutes.toString().padStart(2,'0')}:${seconds.toString().padStart(2,'0')} min`;
+            card.classList.remove("imminent", "urgent", "late", "blink");
+            if (minutes <= 10) card.classList.add("imminent");
+            else if (minutes <= 30) card.classList.add("urgent");
+            card.dataset.alerted = "false";
         }
     });
 }
-setInterval(updateCountdowns,1000);
+setInterval(updateCountdowns, 1000);
 
 // --- PWA install ---
 let deferredPrompt;
-const installButton=document.getElementById("installButton");
-window.addEventListener("beforeinstallprompt",(e)=>{ e.preventDefault(); deferredPrompt=e; installButton.style.display="block"; });
-installButton.addEventListener("click", async()=>{ installButton.style.display="none"; deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt=null; });
+const installButton = document.getElementById("installButton");
+
+window.addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    installButton.style.display = "block";
+});
+
+installButton.addEventListener("click", async () => {
+    installButton.style.display = "none";
+    deferredPrompt.prompt();
+    await deferredPrompt.userChoice;
+    deferredPrompt = null;
+});
 
 // --- Service Worker ---
-if('serviceWorker' in navigator){ navigator.serviceWorker.register('service-worker.js').then(()=>console.log("Service Worker registered")); }
+if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("service-worker.js")
+        .then(() => console.log("Service Worker registered"));
+}
 </script>
 </body>
 </html>
