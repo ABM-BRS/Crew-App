@@ -100,9 +100,12 @@ signInAnonymously(auth)
 
 // --- Google Sheets Web App URL ---
 const SHEETS_URL = "https://script.google.com/macros/s/AKfycbzLrDsQHWWBCyRS7RwKCgnWYiEvxnj76VZXs8W4qSjCwd1wC92QQhP1MvOmkNOO2ZPeXw/exec";
+
+// --- DEBUG PROOF THAT NEW FILE IS LOADED ---
 alert("NEW CREW APP LOADED");
 console.log("NEW CREW APP LOADED");
 console.log("SHEETS URL:", SHEETS_URL);
+
 // --- Helpers ---
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -141,10 +144,12 @@ async function logAudit(jobId, action, jobData) {
     };
     await push(auditRef, auditEntry);
 }
-alert("sendToSheets called for " + jobId + " status " + (job?.status || ""));
+
 // --- Google Sheets sync ---
 async function sendToSheets(jobId, job) {
     try {
+        alert("sendToSheets called for " + jobId + " status " + (job?.status || ""));
+
         const t = job.timestamps || {};
         const payload = {
             jobId,
