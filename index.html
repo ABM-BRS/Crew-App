@@ -46,18 +46,23 @@
         <option value="Inbound">Inbound</option>
         <option value="Outbound">Outbound</option>
     </select>
+
     <label for="flight">Flight Number</label>
     <input id="flight" placeholder="Flight Number">
+
     <label for="stand">Stand / Pickup Location</label>
     <input id="stand" placeholder="Stand / Pickup Location">
+
     <label for="time">Date and Time of Request</label>
     <input type="datetime-local" id="time">
+
     <label for="crew">Number of Crew</label>
     <select id="crew">
         <option value="">Crew Number</option>
         <option>1</option><option>2</option><option>3</option>
         <option>4</option><option>5</option><option>6</option>
     </select>
+
     <button onclick="confirmPickup()">Confirm Pickup</button>
 </div>
 
@@ -99,7 +104,7 @@ signInAnonymously(auth)
     .catch(err => console.error("Anonymous auth failed:", err));
 
 // --- Google Sheets Web App URL ---
-const SHEETS_URL = "https://script.google.com/macros/s/AKfycbxJnEkDX44dXHauzeeHl1jbQbShZLWbvxwrBM4FJcjFvMRPil46Tq0LovXNGln8TC4TFA/exec";
+const SHEETS_URL = "https://script.google.com/macros/s/AKfycbyH9rsUwUNKT6tDXFft9PfXF5krncjAVQ3ilPFe9hnZmMMknPAHaRp8RI6bILv-pQyBYA/exec";
 
 // --- Helpers ---
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -140,10 +145,8 @@ async function logAudit(jobId, action, jobData) {
     await push(auditRef, auditEntry);
 }
 
-// --- Google Sheets sync ---
+// --- Google Sheets sync via GET payload ---
 async function sendToSheets(jobId, job) {
-    console.log("sendToSheets called", jobId);
-
     try {
         const t = job.timestamps || {};
 
@@ -165,17 +168,12 @@ async function sendToSheets(jobId, job) {
             lastUpdated: new Date().toISOString()
         };
 
-        console.log("Sheets payload", payload);
+        const url = `${SHEETS_URL}?payload=${encodeURIComponent(JSON.stringify(payload))}`;
+        console.log("Calling Sheets URL", url);
 
-        const params = new URLSearchParams();
-        params.append("payload", JSON.stringify(payload));
-
-        const response = await fetch(SHEETS_URL, {
-            method: "POST",
-            body: params
-        });
-
+        const response = await fetch(url, { method: "GET" });
         const text = await response.text();
+
         console.log("Sheets response status:", response.status);
         console.log("Sheets response body:", text);
 
@@ -189,15 +187,11 @@ async function sendToSheets(jobId, job) {
 
 // --- Confirm Pickup ---
 window.confirmPickup = async function() {
-    console.log("confirmPickup clicked");
-
     const flight = document.getElementById("flight").value.trim();
     const type = document.getElementById("type").value;
     const stand = document.getElementById("stand").value.trim();
     const timeInput = document.getElementById("time").value;
     const crew = document.getElementById("crew").value;
-
-    console.log("form values", { flight, type, stand, timeInput, crew });
 
     if (!flight || !timeInput || !crew) {
         alert("Enter flight, time, and crew");
@@ -234,15 +228,9 @@ window.confirmPickup = async function() {
     };
 
     try {
-        console.log("about to push to Firebase");
         const jobRef = await push(pickupsRef, newJob);
-        console.log("Firebase push worked", jobRef.key);
-
         await logAudit(jobRef.key, "Created", newJob);
-        console.log("audit logged");
-
         await sendToSheets(jobRef.key, newJob);
-        console.log("sendToSheets finished");
     } catch (err) {
         console.error("Failed to add pickup:", err);
         alert("Error adding pickup, see console");
