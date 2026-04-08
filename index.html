@@ -103,6 +103,16 @@ signInAnonymously(auth)
 // --- Google Sheets Web App URL ---
 const SHEETS_URL = "https://script.google.com/macros/s/AKfycbxfHH1dcm4o8Pu_GUyaRBXBImw5p1QCyYlwPX_5VcXBlsIG0qsqp1PRO0MX0kv2JPON6A/exec";
 
+// --- Disable / unregister service workers ---
+if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.getRegistrations().then(registrations => {
+        registrations.forEach(reg => reg.unregister());
+        console.log("Service workers unregistered");
+    }).catch(err => {
+        console.error("Service worker unregister failed:", err);
+    });
+}
+
 // --- Helpers ---
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -168,10 +178,16 @@ async function sendToSheets(jobId, job) {
         const url = `${SHEETS_URL}?payload=${encodeURIComponent(JSON.stringify(payload))}`;
         console.log("Calling Sheets URL", url);
 
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15000);
+
         const response = await fetch(url, {
             method: "GET",
-            cache: "no-store"
+            cache: "no-store",
+            signal: controller.signal
         });
+
+        clearTimeout(timeout);
 
         const text = await response.text();
         console.log("Sheets response status:", response.status);
@@ -495,14 +511,6 @@ installButton.addEventListener("click", async () => {
     await deferredPrompt.userChoice;
     deferredPrompt = null;
 });
-
-// --- Service Worker ---
-if ("serviceWorker" in navigator) {
-   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.getRegistrations().then(registrations => {
-        registrations.forEach(reg => reg.unregister());
-    });
-}
 </script>
 </body>
 </html>
