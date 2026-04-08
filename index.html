@@ -32,14 +32,12 @@
         @keyframes blink { 0% { background-color: #ffe6e6; } 50% { background-color: #ffcccc; } 100% { background-color: #ffe6e6; } }
         .late.blink { animation: blink 1s infinite; }
         #installButton { display:none; margin-bottom:15px; background:#4caf50; }
-        #sheetsFrame { display:none; width:0; height:0; border:0; }
     </style>
 </head>
 
 <body>
 <h1>Airport Pickup Dispatch</h1>
 <button id="installButton">Install App</button>
-<iframe id="sheetsFrame" name="sheetsFrame"></iframe>
 
 <div class="card">
     <h2>Confirm Pickup</h2>
@@ -101,11 +99,11 @@ signInAnonymously(auth)
     .catch(err => console.error("Anonymous auth failed:", err));
 
 // --- Google Sheets Web App URL ---
-const SHEETS_URL = "https://script.google.com/macros/s/AKfycbzLrDsQHWWBCyRS7RwKCgnWYiEvxnj76VZXs8W4qSjCwd1wC92QQhP1MvOmkNOO2ZPeXw/exec";";";
-console.log("CREW APP LIVE VERSION");
-console.log("SHEETS URL:", SHEETS_URL);
-alert("Crew app latest code loaded");
+const SHEETS_URL = "https://script.google.com/macros/s/AKfycbzLrDsQHWWBCyRS7RwKCgnWYiEvxnj76VZXs8W4qSjCwd1wC92QQhP1MvOmkNOO2ZPeXw/exec";
+
 // --- Helpers ---
+const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+
 window.toggleStand = function() {
     document.getElementById("stand").style.display =
         document.getElementById("type").value === "Inbound" ? "block" : "none";
@@ -142,8 +140,8 @@ async function logAudit(jobId, action, jobData) {
     await push(auditRef, auditEntry);
 }
 
-// --- Google Sheets via hidden form (avoids CORS) ---
-function sendToSheets(jobId, job) {
+// --- Google Sheets sync ---
+async function sendToSheets(jobId, job) {
     try {
         const t = job.timestamps || {};
         const payload = {
@@ -164,30 +162,22 @@ function sendToSheets(jobId, job) {
             lastUpdated: new Date().toISOString()
         };
 
-        alert("Sending to Sheets for status: " + payload.status);
-        console.log("Sending to Sheets:", payload);
+        const body = new URLSearchParams({
+            payload: JSON.stringify(payload)
+        });
 
-        const form = document.createElement("form");
-        form.method = "POST";
-        form.action = SHEETS_URL;
-        form.target = "sheetsFrame";
-        form.style.display = "none";
+        await fetch(SHEETS_URL, {
+            method: "POST",
+            mode: "no-cors",
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"
+            },
+            body: body.toString()
+        });
 
-        const input = document.createElement("input");
-        input.type = "hidden";
-        input.name = "payload";
-        input.value = JSON.stringify(payload);
-
-        form.appendChild(input);
-        document.body.appendChild(form);
-        form.submit();
-        document.body.removeChild(form);
-
-        alert("Sheets form submitted");
-        console.log("Sheets form submitted");
+        console.log("Sent to Sheets:", payload.status, payload.jobId);
     } catch (e) {
         console.warn("Failed to send to Google Sheets:", e);
-        alert("Google Sheets sync failed");
     }
 }
 
@@ -236,7 +226,7 @@ window.confirmPickup = async function() {
     try {
         const jobRef = await push(pickupsRef, newJob);
         await logAudit(jobRef.key, "Created", newJob);
-        sendToSheets(jobRef.key, newJob);
+        await sendToSheets(jobRef.key, newJob);
     } catch (err) {
         console.error("Failed to add pickup:", err);
         alert("Error adding pickup, see console");
@@ -257,13 +247,13 @@ window.collected = async id => {
         "timestamps/collected": now
     });
 
+    await pause(500);
+
     const snap = await get(ref(db, "pickups1/" + id));
     const fullJob = snap.val();
 
-    console.log("Collected fullJob:", fullJob);
-
     await logAudit(id, "Collected", fullJob);
-    sendToSheets(id, fullJob);
+    await sendToSheets(id, fullJob);
 };
 
 window.complete = async id => {
@@ -274,16 +264,19 @@ window.complete = async id => {
         "timestamps/completed": now
     });
 
+    await pause(500);
+
     const snap = await get(ref(db, "pickups1/" + id));
     const fullJob = snap.val();
 
-    console.log("Completed fullJob:", fullJob);
-
     await logAudit(id, "Completed", fullJob);
-    sendToSheets(id, fullJob);
+    await sendToSheets(id, fullJob);
 };
 
 window.removePickup = async id => {
+    const ok = confirm("Are you sure you want to delete this job?");
+    if (!ok) return;
+
     const now = new Date().toISOString();
 
     await update(ref(db, "pickups1/" + id), {
@@ -291,13 +284,13 @@ window.removePickup = async id => {
         "timestamps/deleted": now
     });
 
+    await pause(500);
+
     const snap = await get(ref(db, "pickups1/" + id));
     const fullJob = snap.val();
 
-    console.log("Deleted fullJob:", fullJob);
-
     await logAudit(id, "Deleted", fullJob);
-    sendToSheets(id, fullJob);
+    await sendToSheets(id, fullJob);
 };
 
 // --- Reset Alerts ---
