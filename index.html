@@ -164,6 +164,7 @@ function sendToSheets(jobId, job) {
             lastUpdated: new Date().toISOString()
         };
 
+        alert("Sending to Sheets for status: " + payload.status);
         console.log("Sending to Sheets:", payload);
 
         const form = document.createElement("form");
@@ -182,10 +183,11 @@ function sendToSheets(jobId, job) {
         form.submit();
         document.body.removeChild(form);
 
+        alert("Sheets form submitted");
         console.log("Sheets form submitted");
     } catch (e) {
         console.warn("Failed to send to Google Sheets:", e);
-        alert("Google Sheets sync failed. Open F12 > Console to see the error.");
+        alert("Google Sheets sync failed");
     }
 }
 
