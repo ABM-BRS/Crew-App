@@ -99,12 +99,7 @@ signInAnonymously(auth)
     .catch(err => console.error("Anonymous auth failed:", err));
 
 // --- Google Sheets Web App URL ---
-const SHEETS_URL = "https://script.google.com/macros/s/AKfycbyH9rsUwUNKT6tDXFft9PfXF5krncjAVQ3ilPFe9hnZmMMknPAHaRp8RI6bILv-pQyBYA/exec";
-
-// --- DEBUG PROOF THAT NEW FILE IS LOADED ---
-alert("NEW CREW APP LOADED");
-console.log("NEW CREW APP LOADED");
-console.log("SHEETS URL:", SHEETS_URL);
+const SHEETS_URL = "https://script.google.com/macros/s/AKfycbzLrDsQHWWBCyRS7RwKCgnWYiEvxnj76VZXs8W4qSjCwd1wC92QQhP1MvOmkNOO2ZPeXw/exec";
 
 // --- Helpers ---
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -148,9 +143,8 @@ async function logAudit(jobId, action, jobData) {
 // --- Google Sheets sync ---
 async function sendToSheets(jobId, job) {
     try {
-        alert("sendToSheets called for " + jobId + " status " + (job?.status || ""));
-
         const t = job.timestamps || {};
+
         const payload = {
             jobId,
             flightNumber: job.flightNumber || "",
@@ -169,20 +163,13 @@ async function sendToSheets(jobId, job) {
             lastUpdated: new Date().toISOString()
         };
 
-        const body = new URLSearchParams({
-            payload: JSON.stringify(payload)
-        });
-
         await fetch(SHEETS_URL, {
             method: "POST",
-            mode: "no-cors",
             headers: {
-                "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"
+                "Content-Type": "application/json"
             },
-            body: body.toString()
+            body: JSON.stringify(payload)
         });
-
-        console.log("Sent to Sheets:", payload.status, payload.jobId);
     } catch (e) {
         console.warn("Failed to send to Google Sheets:", e);
     }
