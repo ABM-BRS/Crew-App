@@ -267,46 +267,42 @@ window.collected = async id => {
 
 window.complete = async id => {
     try {
+        console.log("COMPLETE clicked for", id);
+
         const now = new Date().toISOString();
 
+        const snap = await get(ref(db, "pickups1/" + id));
+        const existingJob = snap.val();
+
+        if (!existingJob) {
+            console.error("Job not found");
+            return;
+        }
+
+        const updatedJob = {
+            ...existingJob,
+            status: "Completed",
+            timestamps: {
+                ...(existingJob.timestamps || {}),
+                completed: now
+            }
+        };
+
+        // Update Firebase
         await update(ref(db, "pickups1/" + id), {
             status: "Completed",
             "timestamps/completed": now
         });
 
-        await pause(500);
+        console.log("Firebase updated");
 
-        const snap = await get(ref(db, "pickups1/" + id));
-        const fullJob = snap.val();
+        // 🔥 SEND UPDATED JOB DIRECTLY (no delay, no re-fetch issues)
+        await sendToSheets(id, updatedJob);
 
-        await logAudit(id, "Completed", fullJob);
-        await sendToSheets(id, fullJob);
+        console.log("Completed sent to Sheets", updatedJob);
+
     } catch (err) {
-        console.error("Complete update failed:", err);
-    }
-};
-
-window.removePickup = async id => {
-    const ok = confirm("Are you sure you want to delete this job?");
-    if (!ok) return;
-
-    try {
-        const now = new Date().toISOString();
-
-        await update(ref(db, "pickups1/" + id), {
-            status: "Deleted",
-            "timestamps/deleted": now
-        });
-
-        await pause(500);
-
-        const snap = await get(ref(db, "pickups1/" + id));
-        const fullJob = snap.val();
-
-        await logAudit(id, "Deleted", fullJob);
-        await sendToSheets(id, fullJob);
-    } catch (err) {
-        console.error("Delete update failed:", err);
+        console.error("Complete failed:", err);
     }
 };
 
