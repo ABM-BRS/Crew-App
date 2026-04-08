@@ -141,7 +141,7 @@ async function logAudit(jobId, action, jobData) {
     };
     await push(auditRef, auditEntry);
 }
-
+alert("sendToSheets called for " + jobId + " status " + (job?.status || ""));
 // --- Google Sheets sync ---
 async function sendToSheets(jobId, job) {
     try {
