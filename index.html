@@ -99,7 +99,7 @@ signInAnonymously(auth)
     .catch(err => console.error("Anonymous auth failed:", err));
 
 // --- Google Sheets Web App URL ---
-const SHEETS_URL = "https://script.google.com/macros/s/AKfycbxJnEkDX44dXHauzeeHl1jbQbShZLWbvxwrBM4FJcjFvMRPil46Tq0LovXNGln8TC4TFA/exec";
+const SHEETS_URL = "https://script.google.com/macros/s/AKfycbyH9rsUwUNKT6tDXFft9PfXF5krncjAVQ3ilPFe9hnZmMMknPAHaRp8RI6bILv-pQyBYA/exec";
 
 // --- Helpers ---
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -167,7 +167,6 @@ async function sendToSheets(jobId, job) {
 
         console.log("Sheets payload", payload);
 
-        // Use URL-encoded form data to avoid CORS preflight
         const params = new URLSearchParams();
         params.append("payload", JSON.stringify(payload));
 
@@ -258,63 +257,80 @@ window.confirmPickup = async function() {
 
 // --- Collected / Complete / Delete ---
 window.collected = async id => {
-    const now = new Date().toISOString();
+    try {
+        const now = new Date().toISOString();
 
-    await update(ref(db, "pickups1/" + id), {
-        status: "Collected",
-        "timestamps/collected": now
-    });
+        await update(ref(db, "pickups1/" + id), {
+            status: "Collected",
+            "timestamps/collected": now
+        });
 
-    await pause(500);
+        await pause(500);
 
-    const snap = await get(ref(db, "pickups1/" + id));
-    const fullJob = snap.val();
+        const snap = await get(ref(db, "pickups1/" + id));
+        const fullJob = snap.val();
 
-    await logAudit(id, "Collected", fullJob);
-    await sendToSheets(id, fullJob);
+        await logAudit(id, "Collected", fullJob);
+        await sendToSheets(id, fullJob);
+    } catch (err) {
+        console.error("Collected update failed:", err);
+    }
 };
 
 window.complete = async id => {
-    const now = new Date().toISOString();
+    try {
+        const now = new Date().toISOString();
 
-    await update(ref(db, "pickups1/" + id), {
-        status: "Completed",
-        "timestamps/completed": now
-    });
+        await update(ref(db, "pickups1/" + id), {
+            status: "Completed",
+            "timestamps/completed": now
+        });
 
-    await pause(500);
+        await pause(500);
 
-    const snap = await get(ref(db, "pickups1/" + id));
-    const fullJob = snap.val();
+        const snap = await get(ref(db, "pickups1/" + id));
+        const fullJob = snap.val();
 
-    await logAudit(id, "Completed", fullJob);
-    await sendToSheets(id, fullJob);
+        await logAudit(id, "Completed", fullJob);
+        await sendToSheets(id, fullJob);
+    } catch (err) {
+        console.error("Complete update failed:", err);
+    }
 };
 
 window.removePickup = async id => {
     const ok = confirm("Are you sure you want to delete this job?");
     if (!ok) return;
 
-    const now = new Date().toISOString();
+    try {
+        const now = new Date().toISOString();
 
-    await update(ref(db, "pickups1/" + id), {
-        status: "Deleted",
-        "timestamps/deleted": now
-    });
+        await update(ref(db, "pickups1/" + id), {
+            status: "Deleted",
+            "timestamps/deleted": now
+        });
 
-    await pause(500);
+        await pause(500);
 
-    const snap = await get(ref(db, "pickups1/" + id));
-    const fullJob = snap.val();
+        const snap = await get(ref(db, "pickups1/" + id));
+        const fullJob = snap.val();
 
-    await logAudit(id, "Deleted", fullJob);
-    await sendToSheets(id, fullJob);
+        await logAudit(id, "Deleted", fullJob);
+        await sendToSheets(id, fullJob);
+    } catch (err) {
+        console.error("Delete update failed:", err);
+    }
 };
 
 // --- Reset Alerts ---
 window.resetAlerts = function() {
-    alertSound.pause();
-    alertSound.currentTime = 0;
+    try {
+        alertSound.pause();
+        alertSound.currentTime = 0;
+    } catch (e) {
+        console.warn("Alert reset failed:", e);
+    }
+
     Array.from(document.getElementsByClassName("pickup-card")).forEach(card => {
         card.classList.remove("blink");
         card.dataset.alerted = "false";
@@ -415,7 +431,11 @@ function updateCountdowns() {
             card.classList.add("late", "blink");
 
             if (card.dataset.alerted === "false") {
-                try { alertSound.play(); } catch (e) { console.warn("Alert sound failed:", e); }
+                if (alertSound && alertSound.getAttribute("src")) {
+                    alertSound.play().catch(e => {
+                        console.warn("Alert sound failed:", e);
+                    });
+                }
                 card.dataset.alerted = "true";
             }
         } else {
@@ -443,6 +463,7 @@ window.addEventListener("beforeinstallprompt", (e) => {
 
 installButton.addEventListener("click", async () => {
     installButton.style.display = "none";
+    if (!deferredPrompt) return;
     deferredPrompt.prompt();
     await deferredPrompt.userChoice;
     deferredPrompt = null;
