@@ -72,8 +72,6 @@
     <div id="dashboard"></div>
 </div>
 
-<audio id="alertSound" src="alert.mp3" preload="auto"></audio>
-
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getDatabase, ref, push, update, onValue, get } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
@@ -95,7 +93,6 @@ const db = getDatabase(app);
 const pickupsRef = ref(db, "pickups1");
 const auditRef = ref(db, "auditLogs");
 const dashboard = document.getElementById("dashboard");
-const alertSound = document.getElementById("alertSound");
 
 // --- Anonymous Auth ---
 const auth = getAuth();
@@ -232,23 +229,24 @@ window.confirmPickup = async function() {
 
     try {
         console.log("CREATING JOB:", newJob);
+
         const jobRef = await push(pickupsRef, newJob);
         console.log("FIREBASE JOB ID:", jobRef.key);
 
         await logAudit(jobRef.key, "Created", newJob);
-        await sendToSheets(jobRef.key, newJob);
+        console.log("AUDIT LOGGED");
 
+        await sendToSheets(jobRef.key, newJob);
         console.log("NEW JOB SENT OK");
+
+        document.getElementById("flight").value = "";
+        document.getElementById("stand").value = "";
+        document.getElementById("time").value = "";
+        document.getElementById("crew").value = "";
     } catch (err) {
         console.error("Failed to add pickup:", err);
         alert("Error adding pickup, see console");
-        return;
     }
-
-    document.getElementById("flight").value = "";
-    document.getElementById("stand").value = "";
-    document.getElementById("time").value = "";
-    document.getElementById("crew").value = "";
 };
 
 // --- Collected / Complete / Delete ---
@@ -368,13 +366,6 @@ window.removePickup = async id => {
 
 // --- Reset Alerts ---
 window.resetAlerts = function() {
-    try {
-        alertSound.pause();
-        alertSound.currentTime = 0;
-    } catch (e) {
-        console.warn("Alert reset failed:", e);
-    }
-
     Array.from(document.getElementsByClassName("pickup-card")).forEach(card => {
         card.classList.remove("blink");
         card.dataset.alerted = "false";
@@ -473,13 +464,7 @@ function updateCountdowns() {
             countdownEl.textContent = "Late!";
             card.classList.remove("imminent", "urgent");
             card.classList.add("late", "blink");
-
-            if (card.dataset.alerted === "false") {
-                alertSound.play().catch(e => {
-                    console.warn("Alert sound failed:", e);
-                });
-                card.dataset.alerted = "true";
-            }
+            card.dataset.alerted = "true";
         } else {
             const minutes = Math.floor(diffSeconds / 60);
             const seconds = diffSeconds % 60;
