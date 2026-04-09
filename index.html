@@ -114,7 +114,9 @@ if ("serviceWorker" in navigator) {
 }
 
 // --- Helpers ---
-const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+function pause(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 window.toggleStand = function() {
     document.getElementById("stand").style.display =
@@ -178,16 +180,10 @@ async function sendToSheets(jobId, job) {
         const url = `${SHEETS_URL}?payload=${encodeURIComponent(JSON.stringify(payload))}`;
         console.log("Calling Sheets URL", url);
 
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 15000);
-
         const response = await fetch(url, {
             method: "GET",
-            cache: "no-store",
-            signal: controller.signal
+            cache: "no-store"
         });
-
-        clearTimeout(timeout);
 
         const text = await response.text();
         console.log("Sheets response status:", response.status);
@@ -196,8 +192,23 @@ async function sendToSheets(jobId, job) {
         if (!response.ok) {
             throw new Error(`Sheets sync failed: ${response.status} ${text}`);
         }
+
+        let result;
+        try {
+            result = JSON.parse(text);
+        } catch {
+            throw new Error(`Sheets returned non-JSON response: ${text}`);
+        }
+
+        if (!result.success) {
+            throw new Error(`Sheets script error: ${result.error || "Unknown error"}`);
+        }
+
+        return result;
+
     } catch (e) {
         console.error("Failed to send to Google Sheets:", e);
+        throw e;
     }
 }
 
@@ -300,6 +311,7 @@ window.collected = async id => {
         console.log("Collected sent to Sheets", updatedJob);
     } catch (err) {
         console.error("Collected update failed:", err);
+        alert("Collected update failed, see console");
     }
 };
 
@@ -337,6 +349,7 @@ window.complete = async id => {
         console.log("Completed sent to Sheets", updatedJob);
     } catch (err) {
         console.error("Complete update failed:", err);
+        alert("Complete update failed, see console");
     }
 };
 
@@ -377,6 +390,7 @@ window.removePickup = async id => {
         console.log("Deleted sent to Sheets", updatedJob);
     } catch (err) {
         console.error("Delete update failed:", err);
+        alert("Delete update failed, see console");
     }
 };
 
