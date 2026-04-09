@@ -7,7 +7,7 @@
     <link rel="apple-touch-icon" href="favicon.png">
     <link rel="manifest" href="manifest.json">
     <style>
-        body { font-family: Arial; background: #f4f6f8; padding: 15px; max-width: 900px; margin: auto; }
+        body { font-family: Arial, sans-serif; background: #f4f6f8; padding: 15px; max-width: 900px; margin: auto; }
         h1 { text-align: center; }
         .card { background: white; padding: 18px; margin-bottom: 20px; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
         label { font-weight: bold; display:block; margin-top:10px; }
@@ -29,7 +29,11 @@
         .urgent { border-left:5px solid #f57c00; }
         .imminent { border-left:5px solid #e53935; }
         .late { border-left:5px solid #d32f2f; background: #ffe6e6; }
-        @keyframes blink { 0% { background-color: #ffe6e6; } 50% { background-color: #ffcccc; } 100% { background-color: #ffe6e6; } }
+        @keyframes blink {
+            0% { background-color: #ffe6e6; }
+            50% { background-color: #ffcccc; }
+            100% { background-color: #ffe6e6; }
+        }
         .late.blink { animation: blink 1s infinite; }
         #installButton { display:none; margin-bottom:15px; background:#4caf50; }
     </style>
@@ -99,8 +103,10 @@ signInAnonymously(auth)
     .then(() => console.log("Signed in anonymously"))
     .catch(err => console.error("Anonymous auth failed:", err));
 
+// KEEP THIS AS YOUR CURRENT WORKING DEPLOYMENT URL
 const SHEETS_URL = "https://script.google.com/macros/s/AKfycbyn49GFKCjDLxQNtPlknoGXqFegZYmOEDv4ak01pnpuGXiqagQ_r-fdtSv-dcmLFnjDkg/exec";
 
+// unregister old service workers
 if ("serviceWorker" in navigator) {
     navigator.serviceWorker.getRegistrations().then(registrations => {
         registrations.forEach(reg => reg.unregister());
@@ -170,7 +176,7 @@ async function sendToSheets(jobId, job) {
         };
 
         const url = `${SHEETS_URL}?payload=${encodeURIComponent(JSON.stringify(payload))}`;
-        console.log("Sending to Sheets (no-cors):", url);
+        console.log("Sending to Sheets:", payload);
 
         await fetch(url, {
             method: "GET",
@@ -226,16 +232,16 @@ window.confirmPickup = async function() {
     };
 
     try {
-        console.log("CREATING JOB:", newJob);
-
         const jobRef = await push(pickupsRef, newJob);
         console.log("FIREBASE JOB ID:", jobRef.key);
 
+        // clear form immediately
         document.getElementById("flight").value = "";
         document.getElementById("stand").value = "";
         document.getElementById("time").value = "";
         document.getElementById("crew").value = "";
 
+        // background tasks
         logAudit(jobRef.key, "Created", newJob).catch(err => console.error("Audit log failed:", err));
         sendToSheets(jobRef.key, newJob);
 
@@ -245,17 +251,13 @@ window.confirmPickup = async function() {
     }
 };
 
-window.collected = async id => {
+window.collected = async function(id) {
     try {
-        console.log("COLLECTED clicked for", id);
-
         const now = new Date().toISOString();
         const snap = await get(ref(db, "pickups1/" + id));
         const existingJob = snap.val();
 
-        if (!existingJob) {
-            throw new Error("Job not found in Firebase");
-        }
+        if (!existingJob) throw new Error("Job not found in Firebase");
 
         const updatedJob = {
             ...existingJob,
@@ -271,28 +273,21 @@ window.collected = async id => {
             "timestamps/collected": now
         });
 
-        console.log("Firebase updated");
-
         logAudit(id, "Collected", updatedJob).catch(err => console.error("Audit log failed:", err));
         sendToSheets(id, updatedJob);
-
     } catch (err) {
         console.error("Collected update failed:", err);
         alert("Collected update failed, see console");
     }
 };
 
-window.complete = async id => {
+window.complete = async function(id) {
     try {
-        console.log("COMPLETE clicked for", id);
-
         const now = new Date().toISOString();
         const snap = await get(ref(db, "pickups1/" + id));
         const existingJob = snap.val();
 
-        if (!existingJob) {
-            throw new Error("Job not found in Firebase");
-        }
+        if (!existingJob) throw new Error("Job not found in Firebase");
 
         const updatedJob = {
             ...existingJob,
@@ -308,31 +303,24 @@ window.complete = async id => {
             "timestamps/completed": now
         });
 
-        console.log("Firebase updated");
-
         logAudit(id, "Completed", updatedJob).catch(err => console.error("Audit log failed:", err));
         sendToSheets(id, updatedJob);
-
     } catch (err) {
         console.error("Complete update failed:", err);
         alert("Complete update failed, see console");
     }
 };
 
-window.removePickup = async id => {
+window.removePickup = async function(id) {
     const ok = confirm("Are you sure you want to delete this job?");
     if (!ok) return;
 
     try {
-        console.log("DELETE clicked for", id);
-
         const now = new Date().toISOString();
         const snap = await get(ref(db, "pickups1/" + id));
         const existingJob = snap.val();
 
-        if (!existingJob) {
-            throw new Error("Job not found in Firebase");
-        }
+        if (!existingJob) throw new Error("Job not found in Firebase");
 
         const updatedJob = {
             ...existingJob,
@@ -348,11 +336,8 @@ window.removePickup = async id => {
             "timestamps/deleted": now
         });
 
-        console.log("Firebase updated");
-
         logAudit(id, "Deleted", updatedJob).catch(err => console.error("Audit log failed:", err));
         sendToSheets(id, updatedJob);
-
     } catch (err) {
         console.error("Delete update failed:", err);
         alert("Delete update failed, see console");
@@ -422,6 +407,7 @@ onValue(pickupsRef, snapshot => {
                 <button class="delete" onclick="removePickup('${p.id}')">Delete Job (no show)</button>
             </div>
         `;
+
         dashboard.appendChild(card);
     });
 
@@ -460,7 +446,7 @@ function updateCountdowns() {
         } else {
             const minutes = Math.floor(diffSeconds / 60);
             const seconds = diffSeconds % 60;
-            countdownEl.textContent = `Time left: ${minutes.toString().padStart(2,'0')}:${seconds.toString().padStart(2,'0')} min`;
+            countdownEl.textContent = `Time left: ${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")} min`;
             card.classList.remove("imminent", "urgent", "late", "blink");
             if (minutes <= 10) card.classList.add("imminent");
             else if (minutes <= 30) card.classList.add("urgent");
@@ -468,6 +454,7 @@ function updateCountdowns() {
         }
     });
 }
+
 setInterval(updateCountdowns, 1000);
 
 let deferredPrompt;
