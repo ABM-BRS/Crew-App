@@ -99,7 +99,7 @@ signInAnonymously(auth)
     .then(() => console.log("Signed in anonymously"))
     .catch(err => console.error("Anonymous auth failed:", err));
 
-const SHEETS_URL = "https://script.google.com/macros/s/AKfycbyL9UadZk_8Cl65yaHawsDOMtqy0u_Sx-XL-aHqTbopLTkGmAo53NQOYkBblRc9VF0h8A/exec";
+const SHEETS_URL = "https://script.google.com/macros/s/AKfycbyn49GFKCjDLxQNtPlknoGXqFegZYmOEDv4ak01pnpuGXiqagQ_r-fdtSv-dcmLFnjDkg/exec";
 
 if ("serviceWorker" in navigator) {
     navigator.serviceWorker.getRegistrations().then(registrations => {
@@ -144,9 +144,7 @@ async function logAudit(jobId, action, jobData) {
     };
 
     await push(auditRef, auditEntry);
-
-    const auditSnap = await get(auditRef);
-    console.log("FIREBASE AUDIT LOG COUNT:", auditSnap.exists() ? Object.keys(auditSnap.val()).length : 0);
+    console.log("AUDIT LOGGED");
 }
 
 async function sendToSheets(jobId, job) {
@@ -171,39 +169,18 @@ async function sendToSheets(jobId, job) {
             lastUpdated: new Date().toISOString()
         };
 
-        console.log("SENDING JOB TO SHEETS:", JSON.stringify(payload, null, 2));
-
         const url = `${SHEETS_URL}?payload=${encodeURIComponent(JSON.stringify(payload))}`;
-        console.log("Calling Sheets URL", url);
+        console.log("Sending to Sheets (no-cors):", url);
 
-        const response = await fetch(url, {
+        await fetch(url, {
             method: "GET",
+            mode: "no-cors",
             cache: "no-store"
         });
 
-        const text = await response.text();
-        console.log("Sheets response status:", response.status);
-        console.log("Sheets response body:", text);
-
-        if (!response.ok) {
-            throw new Error(`Sheets sync failed: ${response.status} ${text}`);
-        }
-
-        let result;
-        try {
-            result = JSON.parse(text);
-        } catch {
-            throw new Error(`Sheets returned non-JSON response: ${text}`);
-        }
-
-        if (!result.success) {
-            throw new Error(`Sheets script error: ${result.error || "Unknown error"}`);
-        }
-
-        return result;
+        console.log("Sheets request sent");
     } catch (e) {
-        console.error("Failed to send to Google Sheets:", e);
-        throw e;
+        console.error("Sheets send failed:", e);
     }
 }
 
@@ -254,21 +231,13 @@ window.confirmPickup = async function() {
         const jobRef = await push(pickupsRef, newJob);
         console.log("FIREBASE JOB ID:", jobRef.key);
 
-        const savedSnap = await get(ref(db, "pickups1/" + jobRef.key));
-        console.log("FIREBASE SAVED JOB:", JSON.stringify(savedSnap.val(), null, 2));
-
         document.getElementById("flight").value = "";
         document.getElementById("stand").value = "";
         document.getElementById("time").value = "";
         document.getElementById("crew").value = "";
 
-        logAudit(jobRef.key, "Created", newJob)
-            .then(() => console.log("AUDIT LOGGED"))
-            .catch(err => console.error("Audit log failed:", err));
-
-        sendToSheets(jobRef.key, newJob)
-            .then(() => console.log("NEW JOB SENT OK"))
-            .catch(err => console.error("Sheets sync failed:", err));
+        logAudit(jobRef.key, "Created", newJob).catch(err => console.error("Audit log failed:", err));
+        sendToSheets(jobRef.key, newJob);
 
     } catch (err) {
         console.error("Failed to add pickup:", err);
@@ -304,13 +273,9 @@ window.collected = async id => {
 
         console.log("Firebase updated");
 
-        const savedSnap = await get(ref(db, "pickups1/" + id));
-        console.log("FIREBASE AFTER COLLECTED:", JSON.stringify(savedSnap.val(), null, 2));
+        logAudit(id, "Collected", updatedJob).catch(err => console.error("Audit log failed:", err));
+        sendToSheets(id, updatedJob);
 
-        await logAudit(id, "Collected", updatedJob);
-        await sendToSheets(id, updatedJob);
-
-        console.log("Collected sent to Sheets", updatedJob);
     } catch (err) {
         console.error("Collected update failed:", err);
         alert("Collected update failed, see console");
@@ -345,13 +310,9 @@ window.complete = async id => {
 
         console.log("Firebase updated");
 
-        const savedSnap = await get(ref(db, "pickups1/" + id));
-        console.log("FIREBASE AFTER COMPLETED:", JSON.stringify(savedSnap.val(), null, 2));
+        logAudit(id, "Completed", updatedJob).catch(err => console.error("Audit log failed:", err));
+        sendToSheets(id, updatedJob);
 
-        await logAudit(id, "Completed", updatedJob);
-        await sendToSheets(id, updatedJob);
-
-        console.log("Completed sent to Sheets", updatedJob);
     } catch (err) {
         console.error("Complete update failed:", err);
         alert("Complete update failed, see console");
@@ -389,13 +350,9 @@ window.removePickup = async id => {
 
         console.log("Firebase updated");
 
-        const savedSnap = await get(ref(db, "pickups1/" + id));
-        console.log("FIREBASE AFTER DELETED:", JSON.stringify(savedSnap.val(), null, 2));
+        logAudit(id, "Deleted", updatedJob).catch(err => console.error("Audit log failed:", err));
+        sendToSheets(id, updatedJob);
 
-        await logAudit(id, "Deleted", updatedJob);
-        await sendToSheets(id, updatedJob);
-
-        console.log("Deleted sent to Sheets", updatedJob);
     } catch (err) {
         console.error("Delete update failed:", err);
         alert("Delete update failed, see console");
@@ -413,15 +370,10 @@ onValue(pickupsRef, snapshot => {
     const pickups = [];
     const now = new Date();
 
-    console.log("FIREBASE SNAPSHOT EXISTS:", snapshot.exists());
-
     snapshot.forEach(child => {
         const data = { id: child.key, ...child.val() };
         pickups.push(data);
     });
-
-    console.log("FIREBASE PICKUPS COUNT:", pickups.length);
-    console.log("FIREBASE PICKUPS DATA:", JSON.stringify(pickups, null, 2));
 
     pickups.sort((a, b) => {
         const aTime = new Date(a.pickupTime);
