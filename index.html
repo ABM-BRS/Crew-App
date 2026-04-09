@@ -11,7 +11,7 @@
         h1 { text-align: center; }
         .card { background: white; padding: 18px; margin-bottom: 20px; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
         label { font-weight: bold; display:block; margin-top:10px; }
-        input, select, button { width: 100%; padding: 12px; margin: 6px 0; font-size: 16px; }
+        input, select, button { width: 100%; padding: 12px; margin: 6px 0; font-size: 16px; box-sizing: border-box; }
         button { background: #007bff; color: white; border: none; border-radius: 6px; cursor: pointer; }
         button:hover { background: #0056b3; }
         .complete { background: #2e7d32; }
@@ -41,6 +41,7 @@
 
 <div class="card">
     <h2>Confirm Pickup</h2>
+
     <label for="type">Type</label>
     <select id="type" onchange="toggleStand()">
         <option value="Inbound">Inbound</option>
@@ -98,7 +99,7 @@ signInAnonymously(auth)
     .then(() => console.log("Signed in anonymously"))
     .catch(err => console.error("Anonymous auth failed:", err));
 
-const SHEETS_URL = "https://script.google.com/macros/s/AKfycbyn49GFKCjDLxQNtPlknoGXqFegZYmOEDv4ak01pnpuGXiqagQ_r-fdtSv-dcmLFnjDkg/exec";
+const SHEETS_URL = "https://script.google.com/macros/s/AKfycbyL9UadZk_8Cl65yaHawsDOMtqy0u_Sx-XL-aHqTbopLTkGmAo53NQOYkBblRc9VF0h8A/exec";
 
 if ("serviceWorker" in navigator) {
     navigator.serviceWorker.getRegistrations().then(registrations => {
@@ -256,16 +257,19 @@ window.confirmPickup = async function() {
         const savedSnap = await get(ref(db, "pickups1/" + jobRef.key));
         console.log("FIREBASE SAVED JOB:", JSON.stringify(savedSnap.val(), null, 2));
 
-        await logAudit(jobRef.key, "Created", newJob);
-        console.log("AUDIT LOGGED");
-
-        await sendToSheets(jobRef.key, newJob);
-        console.log("NEW JOB SENT OK");
-
         document.getElementById("flight").value = "";
         document.getElementById("stand").value = "";
         document.getElementById("time").value = "";
         document.getElementById("crew").value = "";
+
+        logAudit(jobRef.key, "Created", newJob)
+            .then(() => console.log("AUDIT LOGGED"))
+            .catch(err => console.error("Audit log failed:", err));
+
+        sendToSheets(jobRef.key, newJob)
+            .then(() => console.log("NEW JOB SENT OK"))
+            .catch(err => console.error("Sheets sync failed:", err));
+
     } catch (err) {
         console.error("Failed to add pickup:", err);
         alert("Error adding pickup, see console");
