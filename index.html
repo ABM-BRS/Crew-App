@@ -141,7 +141,11 @@ async function logAudit(jobId, action, jobData) {
         collectToComplete: formatMinutesDiff(t.collected, t.completed),
         timestamp: new Date().toISOString()
     };
+
     await push(auditRef, auditEntry);
+
+    const auditSnap = await get(auditRef);
+    console.log("FIREBASE AUDIT LOG COUNT:", auditSnap.exists() ? Object.keys(auditSnap.val()).length : 0);
 }
 
 async function sendToSheets(jobId, job) {
@@ -165,6 +169,8 @@ async function sendToSheets(jobId, job) {
             collectToComplete: formatMinutesDiff(t.collected, t.completed),
             lastUpdated: new Date().toISOString()
         };
+
+        console.log("SENDING JOB TO SHEETS:", JSON.stringify(payload, null, 2));
 
         const url = `${SHEETS_URL}?payload=${encodeURIComponent(JSON.stringify(payload))}`;
         console.log("Calling Sheets URL", url);
@@ -194,7 +200,6 @@ async function sendToSheets(jobId, job) {
         }
 
         return result;
-
     } catch (e) {
         console.error("Failed to send to Google Sheets:", e);
         throw e;
@@ -248,6 +253,9 @@ window.confirmPickup = async function() {
         const jobRef = await push(pickupsRef, newJob);
         console.log("FIREBASE JOB ID:", jobRef.key);
 
+        const savedSnap = await get(ref(db, "pickups1/" + jobRef.key));
+        console.log("FIREBASE SAVED JOB:", JSON.stringify(savedSnap.val(), null, 2));
+
         await logAudit(jobRef.key, "Created", newJob);
         console.log("AUDIT LOGGED");
 
@@ -292,6 +300,9 @@ window.collected = async id => {
 
         console.log("Firebase updated");
 
+        const savedSnap = await get(ref(db, "pickups1/" + id));
+        console.log("FIREBASE AFTER COLLECTED:", JSON.stringify(savedSnap.val(), null, 2));
+
         await logAudit(id, "Collected", updatedJob);
         await sendToSheets(id, updatedJob);
 
@@ -329,6 +340,9 @@ window.complete = async id => {
         });
 
         console.log("Firebase updated");
+
+        const savedSnap = await get(ref(db, "pickups1/" + id));
+        console.log("FIREBASE AFTER COMPLETED:", JSON.stringify(savedSnap.val(), null, 2));
 
         await logAudit(id, "Completed", updatedJob);
         await sendToSheets(id, updatedJob);
@@ -371,6 +385,9 @@ window.removePickup = async id => {
 
         console.log("Firebase updated");
 
+        const savedSnap = await get(ref(db, "pickups1/" + id));
+        console.log("FIREBASE AFTER DELETED:", JSON.stringify(savedSnap.val(), null, 2));
+
         await logAudit(id, "Deleted", updatedJob);
         await sendToSheets(id, updatedJob);
 
@@ -392,10 +409,15 @@ onValue(pickupsRef, snapshot => {
     const pickups = [];
     const now = new Date();
 
+    console.log("FIREBASE SNAPSHOT EXISTS:", snapshot.exists());
+
     snapshot.forEach(child => {
         const data = { id: child.key, ...child.val() };
         pickups.push(data);
     });
+
+    console.log("FIREBASE PICKUPS COUNT:", pickups.length);
+    console.log("FIREBASE PICKUPS DATA:", JSON.stringify(pickups, null, 2));
 
     pickups.sort((a, b) => {
         const aTime = new Date(a.pickupTime);
