@@ -98,6 +98,9 @@ const pickupsRef = ref(db, "pickups1");
 const auditRef = ref(db, "auditLogs");
 const dashboard = document.getElementById("dashboard");
 
+const HIDE_AFTER_HOURS = 12;
+const HIDE_AFTER_MS = HIDE_AFTER_HOURS * 60 * 60 * 1000;
+
 const auth = getAuth();
 signInAnonymously(auth)
     .then(() => console.log("Signed in anonymously"))
@@ -357,6 +360,13 @@ onValue(pickupsRef, snapshot => {
 
     snapshot.forEach(child => {
         const data = { id: child.key, ...child.val() };
+
+        const createdAt = data?.timestamps?.created ? new Date(data.timestamps.created) : null;
+        const ageMs = createdAt && !isNaN(createdAt) ? now - createdAt : 0;
+
+        // Hide from Crew app after 12 hours only
+        if (ageMs >= HIDE_AFTER_MS) return;
+
         pickups.push(data);
     });
 
@@ -456,6 +466,11 @@ function updateCountdowns() {
 }
 
 setInterval(updateCountdowns, 1000);
+
+// Refresh Firebase view every minute so jobs disappear after 12 hours
+setInterval(() => {
+    get(pickupsRef).catch(err => console.error("Background refresh failed:", err));
+}, 60000);
 
 let deferredPrompt;
 const installButton = document.getElementById("installButton");
